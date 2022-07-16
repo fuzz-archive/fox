@@ -18,20 +18,21 @@ const NONCE: &[u8] = b"Random Nonce";
 #[clap(about = "A simple file Encryption CLI")]
 struct CLI {
     #[clap(short, long)]
-    key: String,
+    key: Option<String>,
     file: String,
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let arg = CLI::parse();
-    let key: String = arg.key;
     let file: String = arg.file;
     let path_file = Path::new(&file);
 
     let file_content = read(path_file)?;
 
     if path_file.extension().unwrap() == "fox" {
+        let key = arg.key.unwrap();
+
         if key.is_empty() {
             println!("You must provide a key to decrypt the file.");
 
