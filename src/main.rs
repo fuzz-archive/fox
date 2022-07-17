@@ -1,8 +1,10 @@
 use aes_gcm::aead::{Aead, NewAead};
 use aes_gcm::{Aes256Gcm, Key, Nonce};
 use clap::Parser;
+use loading::{Loading, Spinner};
 use rand::distributions::Alphanumeric;
 use rand::Rng;
+use std::process::exit;
 use std::{
     error::Error,
     fs::{read, write},
@@ -27,14 +29,27 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let arg = CLI::parse();
     let file: String = arg.file;
     let path_file = Path::new(&file);
+    let loader = Loading::new(Spinner::new(vec!["↱", "↲"]));
 
-    let file_content = read(path_file)?;
+    loader.text("Starting...");
+
+    loader.text("Reading File Content");
+
+    let file_content = match read(path_file) {
+        Ok(content) => content,
+        Err(err) => {
+            loader.fail(err);
+            exit(0)
+        }
+    };
 
     if path_file.extension().unwrap() == "fox" {
         let key = arg.key.unwrap();
 
+        loader.text("Key flag supplied... Decrypting...");
+
         if key.is_empty() {
-            println!("You must provide a key to decrypt the file.");
+            loader.fail("You must provide a key to decrypt the file.");
 
             return Ok(());
         }
@@ -43,17 +58,31 @@ async fn main() -> Result<(), Box<dyn Error>> {
         let nonce = Nonce::from_slice(NONCE);
         let cipher = Aes256Gcm::new(cipher_key);
 
-        let decrypted_content = cipher
-            .decrypt(nonce, file_content.as_ref())
-            .expect("Could not decrypt file");
+        let decrypted_content = match cipher.decrypt(nonce, file_content.as_ref()) {
+            Ok(content) => content,
+            Err(why) => {
+                loader.fail(why);
+                exit(0)
+            }
+        };
 
-        write(
+        match write(
             format!("{}", path_file.file_stem().unwrap().to_str().unwrap()),
             decrypted_content,
-        )?;
+        ) {
+            Err(why) => {
+                loader.fail(why);
+                exit(0)
+            }
+            Ok(out) => out,
+        };
+
+        loader.success("Successfully decrypted");
 
         return Ok(());
     }
+
+    loader.text("Encrypting file...");
 
     let mut rnd = rand::thread_rng();
     let rnd_key: String = (0..32).map(|_| rnd.sample(Alphanumeric) as char).collect();
@@ -61,16 +90,28 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let nonce = Nonce::from_slice(NONCE);
     let cipher = Aes256Gcm::new(cipher_key);
 
-    let encrypted_content = cipher
-        .encrypt(nonce, file_content.as_ref())
-        .expect("Could not encrypt file...");
+    let encrypted_content = match cipher.encrypt(nonce, file_content.as_ref()) {
+        Ok(content) => content,
+        Err(why) => {
+            loader.fail(why);
+            exit(0)
+        }
+    };
 
-    write(
+    match write(
         format!("{}.fox", path_file.file_name().unwrap().to_str().unwrap()),
         encrypted_content,
-    )?;
+    ) {
+        Err(why) => {
+            loader.fail(why);
+            exit(0)
+        }
+        Ok(out) => out,
+    };
 
-    println!("Decryption Key: {}", rnd_key);
+    let message = format!("Decryption Key: {}", rnd_key);
+
+    loader.success(message);
 
     Ok(())
 }
